@@ -24,6 +24,21 @@ describe("TP/SL rules (same as Metina Pro desk)", () => {
     assert.equal(skip.action, null);
   });
 
+  test("honors on-chain % even when Pro flags V4/LPAgent unreliable", () => {
+    const hit = evaluateExit({
+      poolType: "uniswap",
+      pnl: { onchain_pnl_pct: 5.2, pnl_pct: 5.2, pnl_reliable: false },
+      take_profit_pct: 5,
+    });
+    assert.equal(hit.kind, "take_profit");
+    const below = evaluateExit({
+      poolType: "uniswap",
+      pnl: { onchain_pnl_pct: 4.7, pnl_pct: 4.7, pnl_reliable: false },
+      take_profit_pct: 5,
+    });
+    assert.equal(below.action, null);
+  });
+
   test("uses on-chain pct, not indexer overlay", () => {
     const displayNotHit = evaluateExit({
       poolType: "uniswap",

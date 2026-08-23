@@ -33,12 +33,19 @@ export function evaluateExit(position) {
     ) {
       return { action: null, reason: null, kind: null };
     }
-    if (position.pnl_reliable !== true || pnl.pnl_reliable === false) {
-      return { action: null, reason: null, kind: null };
+    const onchain = num(pnl.onchain_pnl_pct ?? position.onchain_pnl_pct);
+    const display = num(pnl.pnl_pct ?? position.pnl_pct);
+    // V4 / LPAgent often has an on-chain % but Pro flags it unreliable
+    // (no deposit cost basis). Still honor user-set SL/TP on that mark.
+    // Never close on indexer-only display % unless the row is marked reliable.
+    pnlPct = onchain;
+    if (
+      pnlPct == null
+      && position.pnl_reliable === true
+      && pnl.pnl_reliable !== false
+    ) {
+      pnlPct = display;
     }
-    pnlPct = num(pnl.onchain_pnl_pct ?? position.onchain_pnl_pct)
-      ?? num(pnl.pnl_pct)
-      ?? num(position.pnl_pct);
   } else {
     pnlPct = num(pnl.pnl_pct ?? position.pnl_pct ?? pnl.pnl_sol_pct);
   }
@@ -59,6 +66,20 @@ export function evaluateExit(position) {
     };
   }
   return { action: null, reason: null, kind: null };
+}
+
+export function watchLine(position) {
+  const pnl = position?.pnl && typeof position.pnl === "object" ? position.pnl : {};
+  const hit = evaluateExit(position);
+  const onchain = num(pnl.onchain_pnl_pct ?? position?.onchain_pnl_pct);
+  const display = num(pnl.pnl_pct ?? position?.pnl_pct);
+  const tp = num(position?.take_profit_pct);
+  const sl = num(position?.stop_loss_pct);
+  const pct = onchain != null ? onchain.toFixed(2) : "—";
+  const tpLabel = tp != null ? ` tp=${tp}` : "";
+  const slLabel = sl != null ? ` sl=${sl}` : "";
+  const state = hit.kind || (onchain == null && display == null ? "no-pnl" : "watch");
+  return `${position?.pair || position?.position}${slLabel}${tpLabel} onchain=${pct} ${state}`;
 }
 
 export function closePayload(p, extra = {}) {

@@ -1,4 +1,4 @@
-import { closePayload, evaluateExit, positionKey } from "./evaluate-exit.js";
+import { closePayload, evaluateExit, positionKey, watchLine } from "./evaluate-exit.js";
 
 function now() {
   return new Date().toISOString();
@@ -15,6 +15,7 @@ export async function runCycle(client, { liveClose, discover }, inflight) {
   let hits = 0;
 
   for (const p of open) {
+    log(watchLine(p));
     const decision = evaluateExit(p);
     if (decision.action !== "close") continue;
     hits += 1;
