@@ -63,8 +63,14 @@ export async function startWorker(cfg, client) {
 
   const inflight = new Set();
   let tick = 0;
+  let busy = false;
 
   const once = async () => {
+    if (busy) {
+      log("skip overlap — previous cycle still running");
+      return;
+    }
+    busy = true;
     tick += 1;
     const discover = tick === 1 || tick % cfg.discoverEvery === 0;
     try {
@@ -72,11 +78,11 @@ export async function startWorker(cfg, client) {
       log(`watch ${count} open · hits ${hits}${discover ? " · discover" : ""}`);
     } catch (err) {
       log(`cycle failed: ${err.message}`);
+    } finally {
+      busy = false;
     }
   };
 
   await once();
-  const timer = setInterval(once, cfg.pollMs);
-  timer.unref?.();
-  return timer;
+  return setInterval(once, cfg.pollMs);
 }
