@@ -1,0 +1,94 @@
+import { describe, test } from "node:test";
+import assert from "node:assert/strict";
+import { loadConfig } from "../src/config.js";
+
+const ENV_KEYS = [
+  "METINA_URL",
+  "METINA_EMAIL",
+  "METINA_PASSWORD",
+  "EVM_PRIVATE_KEY",
+  "RPC_BSC",
+  "RPC_BASE",
+  "RPC_ROBINHOOD",
+  "RPC_ETHEREUM",
+  "POLL_MS",
+  "DISCOVER_EVERY",
+  "LIVE_CLOSE",
+];
+
+/** Anvil account #1 — public test key, never a real wallet. */
+const TEST_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+const TEST_ADDR = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+
+function withEnv(patch, fn) {
+  const prev = {};
+  for (const key of ENV_KEYS) {
+    prev[key] = process.env[key];
+    if (Object.prototype.hasOwnProperty.call(patch, key)) process.env[key] = patch[key];
+    else delete process.env[key];
+  }
+  try {
+    return fn();
+  } finally {
+    for (const key of ENV_KEYS) {
+      if (prev[key] === undefined) delete process.env[key];
+      else process.env[key] = prev[key];
+    }
+  }
+}
+
+const valid = {
+  METINA_EMAIL: "member@example.com",
+  METINA_PASSWORD: "secret",
+  EVM_PRIVATE_KEY: TEST_KEY,
+};
+
+describe("loadConfig", () => {
+  test("rejects missing email or password", () => {
+    withEnv({ EVM_PRIVATE_KEY: TEST_KEY }, () => {
+      assert.throws(() => loadConfig(), /METINA_EMAIL and METINA_PASSWORD/);
+    });
+    withEnv({ METINA_EMAIL: "a@b.com", EVM_PRIVATE_KEY: TEST_KEY }, () => {
+      assert.throws(() => loadConfig(), /METINA_EMAIL and METINA_PASSWORD/);
+    });
+  });
+
+  test("rejects a bad private key", () => {
+    withEnv({ ...valid, EVM_PRIVATE_KEY: "0xnotakey" }, () => {
+      assert.throws(() => loadConfig(), /EVM_PRIVATE_KEY/);
+    });
+    withEnv({ ...valid, EVM_PRIVATE_KEY: "" }, () => {
+      assert.throws(() => loadConfig(), /EVM_PRIVATE_KEY/);
+    });
+  });
+
+  test("accepts key without 0x and derives the address", () => {
+    const cfg = withEnv({ ...valid, EVM_PRIVATE_KEY: TEST_KEY.slice(2) }, () => loadConfig());
+    assert.equal(cfg.evmKey, TEST_KEY);
+    assert.equal(cfg.address.toLowerCase(), TEST_ADDR.toLowerCase());
+  });
+
+  test("defaults and LIVE_CLOSE stay off unless set", () => {
+    const cfg = withEnv(valid, () => loadConfig());
+    assert.equal(cfg.metinaUrl, "https://pro.metina.id");
+    assert.equal(cfg.liveClose, false);
+    assert.equal(cfg.pollMs, 45_000);
+    assert.equal(cfg.discoverEvery, 8);
+  });
+
+  test("strips trailing slash, maps RPCs, and turns LIVE_CLOSE on", () => {
+    const cfg = withEnv({
+      ...valid,
+      METINA_URL: "https://pro.metina.id/",
+      RPC_BSC: "https://bsc.example",
+      RPC_BASE: "https://base.example",
+      LIVE_CLOSE: "1",
+      POLL_MS: "10000",
+    }, () => loadConfig());
+    assert.equal(cfg.metinaUrl, "https://pro.metina.id");
+    assert.equal(cfg.rpcs.bsc, "https://bsc.example");
+    assert.equal(cfg.rpcs.base, "https://base.example");
+    assert.equal(cfg.liveClose, true);
+    assert.equal(cfg.pollMs, 15_000);
+  });
+});
