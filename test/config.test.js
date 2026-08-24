@@ -41,6 +41,7 @@ const valid = {
   METINA_EMAIL: "member@example.com",
   METINA_PASSWORD: "secret",
   EVM_PRIVATE_KEY: TEST_KEY,
+  RPC_BSC: "https://bsc.example",
 };
 
 describe("loadConfig", () => {
@@ -50,6 +51,16 @@ describe("loadConfig", () => {
     });
     withEnv({ METINA_EMAIL: "a@b.com", EVM_PRIVATE_KEY: TEST_KEY }, () => {
       assert.throws(() => loadConfig(), /METINA_EMAIL and METINA_PASSWORD/);
+    });
+  });
+
+  test("rejects missing RPCs", () => {
+    withEnv({
+      METINA_EMAIL: "member@example.com",
+      METINA_PASSWORD: "secret",
+      EVM_PRIVATE_KEY: TEST_KEY,
+    }, () => {
+      assert.throws(() => loadConfig(), /RPC_ROBINHOOD, RPC_BASE, RPC_BSC/);
     });
   });
 

@@ -16,7 +16,7 @@ Set SL/TP on the Metina Pro Open positions card. The worker only checks and clos
 
 1. An active [Metina Pro](https://pro.metina.id) account (email + password).
 2. Vault / LP wallet private key (`0x` + 64 hex chars).
-3. The same RPC URLs you use in Metina Settings (BSC / Base / Robinhood).
+3. The same RPC URLs as Metina Settings (BSC / Base / Robinhood). Settings keeps them in the browser only — copy them into `.env`. Fill every chain you have positions on.
 4. Node 18+ if you run it on your laptop. Or a Railway / VPS account if you want 24h without leaving a laptop on.
 5. On the Pro desk: open **Open positions**, fill **SL** and **TP** on each card you want protected. Empty SL/TP = the worker will not close that position.
 
@@ -72,7 +72,7 @@ When that looks right, stop with `Ctrl+C`, set `LIVE_CLOSE=1`, then `npm start` 
    - `METINA_EMAIL`
    - `METINA_PASSWORD`
    - `EVM_PRIVATE_KEY`
-   - `RPC_BSC` / `RPC_BASE` / `RPC_ROBINHOOD` (the ones you use)
+   - `RPC_BSC` / `RPC_BASE` / `RPC_ROBINHOOD` (required — every chain you use)
    - `LIVE_CLOSE` = `0`
 4. Start command is already `npm start` (`node src/index.js`). No extra build step.
 5. Open **Deployments → Logs**. Confirm `logged in` and `watch N open`.
@@ -115,6 +115,7 @@ pm2 logs metina-tpsl --lines 50
 - A position card with empty SL/TP will not close.
 - Unreliable on-chain PnL is skipped (avoids a false close).
 - The key is sent to Metina **only on close**, in request memory. It is not saved in the database.
+- Settings RPCs live in the member's browser, not the Metina database. The worker must send them from `.env`.
 - This folder is a **separate project**. Do not put a member `.env` on the Metina Pro server.
 
 ---
@@ -131,7 +132,7 @@ SL/TP tetap diisi di kartu posisi Metina Pro (Open positions). Worker hanya ngec
 
 1. Akun [Metina Pro](https://pro.metina.id) yang aktif (email + password).
 2. Private key wallet LP (`0x` + 64 karakter hex).
-3. RPC yang sama seperti di Settings Metina (BSC / Base / Robinhood).
+3. RPC yang sama seperti di Settings Metina (BSC / Base / Robinhood). Settings cuma simpan di browser — copy ke `.env`. Isi setiap chain yang ada posisinya.
 4. Node 18+ kalau dijalankan di laptop. Atau akun Railway / VPS kalau mau 24 jam tanpa laptop nyala.
 5. Di desk Pro: buka **Open positions**, isi **SL** dan **TP** di kartu yang mau dilindungi. SL/TP kosong = worker tidak close posisi itu.
 
@@ -187,7 +188,7 @@ Kalau log-nya benar, `Ctrl+C`, ganti `LIVE_CLOSE=1`, lalu `npm start` lagi. Tutu
    - `METINA_EMAIL`
    - `METINA_PASSWORD`
    - `EVM_PRIVATE_KEY`
-   - `RPC_BSC` / `RPC_BASE` / `RPC_ROBINHOOD` (yang dipakai)
+   - `RPC_BSC` / `RPC_BASE` / `RPC_ROBINHOOD` (wajib — setiap chain yang dipakai)
    - `LIVE_CLOSE` = `0`
 4. Start command sudah `npm start` (`node src/index.js`). Tidak perlu build khusus.
 5. Buka **Deployments → Logs**. Pastikan ada `logged in` dan `watch N open`.
@@ -230,4 +231,5 @@ pm2 logs metina-tpsl --lines 50
 - Kartu posisi tanpa SL/TP = tidak di-close.
 - PnL on-chain belum valid = skip (supaya tidak salah tembak).
 - Key dikirim ke Metina **hanya saat close**, di memori request, tidak disimpan di database.
+- RPC Settings ada di browser member, bukan di database Metina. Worker harus kirim dari `.env`.
 - Folder ini **project terpisah**. Jangan taruh `.env` member ke server Metina Pro.

@@ -43,6 +43,9 @@ export function loadConfig() {
     const url = envStr(envName);
     if (url) rpcs[chain] = url;
   }
+  if (!Object.keys(rpcs).length) {
+    throw new Error("Set at least one of RPC_ROBINHOOD, RPC_BASE, RPC_BSC in .env (same URLs as Settings)");
+  }
   return {
     metinaUrl,
     email,
