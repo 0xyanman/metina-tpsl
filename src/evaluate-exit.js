@@ -1,6 +1,7 @@
 /**
  * Same rules as Metina Pro desk Auto TP/SL.
- * Only user-set thresholds. Empty SL/TP does not use hidden -50 / +10.
+ * Close on the Open-card Live PNL (fee included), not the raw RPC inventory mark.
+ * Empty SL/TP does not use hidden -50 / +10.
  */
 
 function num(v) {
@@ -13,6 +14,30 @@ export function positionKey(p) {
   const venue = String(p?.poolType || p?.venue || "uniswap").toLowerCase();
   const chain = String(p?.chain || "").toLowerCase();
   return `${venue}-${chain}-${p?.position || p?.tokenId || ""}`;
+}
+
+/** Same % the Open card prints as Live PNL. */
+export function livePnlPct(position) {
+  const pnl = position?.pnl && typeof position.pnl === "object" ? position.pnl : {};
+  const display = num(pnl.pnl_pct ?? position?.pnl_pct);
+  const onchain = num(pnl.onchain_pnl_pct ?? position?.onchain_pnl_pct);
+  const usd = num(pnl.pnl_usd ?? position?.pnl_usd);
+  const unclaimed = num(pnl.unclaimed_fee_usd ?? position?.unclaimed_fees_usd) || 0;
+  const claimed = num(pnl.fees_claimed_usd ?? pnl.fees_claimed_usdg ?? position?.fees_claimed_usd) || 0;
+  const current = num(pnl.current_value_usd ?? position?.total_value_usd ?? position?.current_value_usd);
+
+  let liveUsd = usd;
+  if ((liveUsd == null || Math.abs(liveUsd) < 0.005) && unclaimed + claimed >= 0.01) {
+    liveUsd = (liveUsd || 0) + unclaimed + claimed;
+  }
+
+  if (display != null && Math.abs(display) >= 0.005) return display;
+  if (liveUsd != null && Math.abs(liveUsd) >= 0.01 && current != null) {
+    const cost = current - liveUsd;
+    if (cost > 0) return (liveUsd / cost) * 100;
+  }
+  if (display != null) return display;
+  return onchain;
 }
 
 export function evaluateExit(position) {
@@ -33,19 +58,7 @@ export function evaluateExit(position) {
     ) {
       return { action: null, reason: null, kind: null };
     }
-    const onchain = num(pnl.onchain_pnl_pct ?? position.onchain_pnl_pct);
-    const display = num(pnl.pnl_pct ?? position.pnl_pct);
-    // V4 / LPAgent often has an on-chain % but Pro flags it unreliable
-    // (no deposit cost basis). Still honor user-set SL/TP on that mark.
-    // Never close on indexer-only display % unless the row is marked reliable.
-    pnlPct = onchain;
-    if (
-      pnlPct == null
-      && position.pnl_reliable === true
-      && pnl.pnl_reliable !== false
-    ) {
-      pnlPct = display;
-    }
+    pnlPct = livePnlPct(position);
   } else {
     pnlPct = num(pnl.pnl_pct ?? position.pnl_pct ?? pnl.pnl_sol_pct);
   }
@@ -72,14 +85,15 @@ export function watchLine(position) {
   const pnl = position?.pnl && typeof position.pnl === "object" ? position.pnl : {};
   const hit = evaluateExit(position);
   const onchain = num(pnl.onchain_pnl_pct ?? position?.onchain_pnl_pct);
-  const display = num(pnl.pnl_pct ?? position?.pnl_pct);
+  const live = livePnlPct(position);
   const tp = num(position?.take_profit_pct);
   const sl = num(position?.stop_loss_pct);
-  const pct = onchain != null ? onchain.toFixed(2) : "—";
+  const liveLabel = live != null ? live.toFixed(2) : "—";
+  const onchainLabel = onchain != null ? onchain.toFixed(2) : "—";
   const tpLabel = tp != null ? ` tp=${tp}` : "";
   const slLabel = sl != null ? ` sl=${sl}` : "";
-  const state = hit.kind || (onchain == null && display == null ? "no-pnl" : "watch");
-  return `${position?.pair || position?.position}${slLabel}${tpLabel} onchain=${pct} ${state}`;
+  const state = hit.kind || (live == null && onchain == null ? "no-pnl" : "watch");
+  return `${position?.pair || position?.position}${slLabel}${tpLabel} live=${liveLabel} onchain=${onchainLabel} ${state}`;
 }
 
 export function closePayload(p, extra = {}) {

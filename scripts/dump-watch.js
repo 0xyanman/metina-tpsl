@@ -1,7 +1,7 @@
 import { config as loadDotenv } from "dotenv";
 import { loadConfig } from "../src/config.js";
 import { createClient } from "../src/metina-client.js";
-import { evaluateExit } from "../src/evaluate-exit.js";
+import { evaluateExit, livePnlPct } from "../src/evaluate-exit.js";
 
 loadDotenv();
 const cfg = loadConfig();
@@ -21,6 +21,7 @@ const rows = (data.positions || []).map((p) => {
     seeded: p.entry_seeded_from_principal ?? pnl.entry_seeded_from_principal ?? false,
     onchain_pct: pnl.onchain_pnl_pct,
     display_pct: pnl.pnl_pct,
+    live_pct: livePnlPct(p),
     hit: hit.kind || null,
     reason: hit.reason || null,
   };
