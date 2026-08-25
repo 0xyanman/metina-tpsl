@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { closePayload, evaluateExit, positionKey } from "../src/evaluate-exit.js";
+import { closePayload, evaluateExit, positionKey, watchLine } from "../src/evaluate-exit.js";
 
 describe("TP/SL rules (same as Metina Pro desk)", () => {
   test("hits stop loss when on-chain PnL is reliable", () => {
@@ -15,16 +15,7 @@ describe("TP/SL rules (same as Metina Pro desk)", () => {
     assert.equal(hit.kind, "stop_loss");
   });
 
-  test("skips unreliable PnL", () => {
-    const skip = evaluateExit({
-      poolType: "uniswap",
-      pnl: { pnl_pct: -80 },
-      stop_loss_pct: -50,
-    });
-    assert.equal(skip.action, null);
-  });
-
-  test("honors on-chain % even when Pro flags V4/LPAgent unreliable", () => {
+  test("hits Live PNL even when Pro flags V4/LPAgent unreliable", () => {
     const hit = evaluateExit({
       poolType: "uniswap",
       pnl: { onchain_pnl_pct: 5.2, pnl_pct: 5.2, pnl_reliable: false },
@@ -39,24 +30,38 @@ describe("TP/SL rules (same as Metina Pro desk)", () => {
     assert.equal(below.action, null);
   });
 
-  test("uses on-chain pct, not indexer overlay", () => {
-    const displayNotHit = evaluateExit({
+  test("uses Live PNL %, not on-chain inventory mark", () => {
+    const liveHit = evaluateExit({
       poolType: "uniswap",
-      pnl_reliable: true,
-      pnl: { pnl_pct: -80, onchain_pnl_pct: -4.52, pnl_reliable: true },
-      stop_loss_pct: -50,
-      take_profit_pct: 10,
+      pnl: {
+        pnl_pct: 10.14,
+        pnl_usd: 9.13,
+        onchain_pnl_pct: -3.54,
+        unclaimed_fee_usd: 9.07,
+        current_value_usd: 90.06,
+      },
+      stop_loss_pct: -5,
+      take_profit_pct: 3,
     });
-    assert.equal(displayNotHit.action, null);
+    assert.equal(liveHit.kind, "take_profit");
 
-    const onchainHit = evaluateExit({
+    const liveBelow = evaluateExit({
       poolType: "uniswap",
       pnl_reliable: true,
       pnl: { pnl_pct: -4.52, onchain_pnl_pct: -80, pnl_reliable: true },
       stop_loss_pct: -50,
       take_profit_pct: 10,
     });
-    assert.equal(onchainHit.kind, "stop_loss");
+    assert.equal(liveBelow.action, null);
+  });
+
+  test("falls back to on-chain % when Live PNL is missing", () => {
+    const hit = evaluateExit({
+      poolType: "uniswap",
+      pnl: { onchain_pnl_pct: -80 },
+      stop_loss_pct: -50,
+    });
+    assert.equal(hit.kind, "stop_loss");
   });
 
   test("empty thresholds do not use hidden defaults", () => {
@@ -90,6 +95,18 @@ describe("TP/SL rules (same as Metina Pro desk)", () => {
       take_profit_pct: 20,
     });
     assert.equal(hit.kind, "take_profit");
+  });
+
+  test("watchLine prints live %", () => {
+    const line = watchLine({
+      pair: "HOOD10/USDG",
+      stop_loss_pct: -5,
+      take_profit_pct: 3,
+      pnl: { pnl_pct: 10.14, onchain_pnl_pct: -3.54 },
+    });
+    assert.match(line, /live=10\.14/);
+    assert.match(line, /onchain=-3\.54/);
+    assert.match(line, /take_profit/);
   });
 
   test("positionKey is stable", () => {
