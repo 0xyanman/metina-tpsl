@@ -137,6 +137,60 @@ export function formatPnlBlock(position, labelPrefix = "") {
   return `${header}\n${lines.join("\n")}`;
 }
 
+export function formatCompactNumber(v) {
+  const n = num(v);
+  if (n == null) return "";
+  if (n === 0) return "0";
+  if (Math.abs(n) >= 1_000_000) {
+    return `${Number((n / 1_000_000).toFixed(2))}M`;
+  }
+  if (Math.abs(n) >= 1_000) {
+    return `${Number((n / 1_000).toFixed(2))}k`;
+  }
+  return formatNumber(n);
+}
+
+function formatTokenLine(amt, usd, sym, isStableQuote = false) {
+  if (amt == null && usd == null) return null;
+  if (isStableQuote && usd != null) {
+    return formatUsd(usd);
+  }
+  const parts = [];
+  if (amt != null && (amt > 0 || usd != null)) {
+    parts.push(`${formatCompactNumber(amt)} ${sym}`.trim());
+  } else if (sym) {
+    parts.push(sym);
+  }
+  if (usd != null) {
+    parts.push(`(${formatUsd(usd)})`);
+  }
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+export function formatAssetsBlock(position) {
+  if (!position || typeof position !== "object") return "";
+  const pnl = position.pnl && typeof position.pnl === "object" ? position.pnl : {};
+
+  const memeAmt = num(pnl.amount_meme ?? position.amount_meme);
+  const memeUsd = num(pnl.amount_meme_usd ?? position.amount_meme_usd);
+  const memeSym = pnl.meme_symbol || position.meme_symbol || position.symbol || (position.pair ? position.pair.split("/")[0] : "");
+
+  const ethAmt = num(pnl.amount_eth ?? position.amount_eth);
+  const ethUsd = num(pnl.amount_eth_usd ?? position.amount_eth_usd);
+  const ethSym = pnl.quote_symbol || position.quote_symbol || (position.pair ? position.pair.split("/")[1] : "");
+
+  const memeLine = formatTokenLine(memeAmt, memeUsd, memeSym);
+  const isStableQuote = ["USDG", "USDT", "USDC", "USD", "DAI"].includes(ethSym.toUpperCase());
+  const ethLine = formatTokenLine(ethAmt, ethUsd, ethSym, isStableQuote);
+
+  const lines = [];
+  if (memeLine) lines.push(`  ${memeLine}`);
+  if (ethLine) lines.push(`  ${ethLine}`);
+
+  if (lines.length === 0) return "";
+  return `Assets:\n${lines.join("\n")}`;
+}
+
 export function formatAllPnlSummary(positions) {
   if (!Array.isArray(positions) || positions.length === 0) return "";
 
@@ -206,12 +260,14 @@ function formatPositionCard(p, index, totalCount) {
   const slTpLine = `SL: ${slStr} · TP: ${tpStr}`;
 
   const pnlBlock = formatPnlBlock(p);
+  const assetsBlock = formatAssetsBlock(p);
   const rangeBlock = formatPriceRange(p);
 
   const cardLines = [titleLine];
   if (chainLine) cardLines.push(chainLine);
   cardLines.push(slTpLine);
   if (pnlBlock) cardLines.push(pnlBlock);
+  if (assetsBlock) cardLines.push(assetsBlock);
   if (rangeBlock) cardLines.push(`<code>${escapeHtml(rangeBlock)}</code>`);
 
   return cardLines.join("\n");

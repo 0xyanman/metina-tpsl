@@ -11,6 +11,8 @@ import {
   formatPct,
   formatPriceRange,
   formatPnlBlock,
+  formatCompactNumber,
+  formatAssetsBlock,
   formatAllPnlSummary,
   formatOpenSummary,
   formatCloseMessage,
@@ -174,6 +176,28 @@ describe("position-notify formatting", () => {
     assert.match(block, /Value:\s+\$29\.81/);
     assert.match(block, /Unclaimed fees:\s+\$0\.00/);
     assert.match(block, /Collected fees:\s+\$2\.37/);
+  });
+
+  test("formatAssetsBlock formats token assets breakdown", () => {
+    assert.equal(formatCompactNumber(1870), "1.87k");
+    assert.equal(formatCompactNumber(2500000), "2.5M");
+    assert.equal(formatCompactNumber(28.37), "28.37");
+
+    const pos = {
+      pair: "PONSBOT/USDG",
+      pnl: {
+        amount_meme: 1870,
+        amount_meme_usd: 1.58,
+        meme_symbol: "PONSBOT",
+        amount_eth: 28.37,
+        amount_eth_usd: 28.37,
+        quote_symbol: "USDG",
+      },
+    };
+    const block = formatAssetsBlock(pos);
+    assert.match(block, /Assets:/);
+    assert.match(block, /1\.87k PONSBOT \(\$1\.58\)/);
+    assert.match(block, /\$28\.37/);
   });
 
   test("formatAllPnlSummary aggregates total USD and average Live %", () => {
