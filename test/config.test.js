@@ -14,6 +14,10 @@ const ENV_KEYS = [
   "POLL_MS",
   "DISCOVER_EVERY",
   "LIVE_CLOSE",
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_CHAT_ID",
+  "TELEGRAM_MESSAGE_THREAD_ID",
+  "TELEGRAM_ENABLED",
 ];
 
 /** Anvil account #1 — public test key, never a real wallet. */
@@ -85,6 +89,7 @@ describe("loadConfig", () => {
     assert.equal(cfg.liveClose, false);
     assert.equal(cfg.pollMs, 45_000);
     assert.equal(cfg.discoverEvery, 8);
+    assert.equal(cfg.telegram, null);
   });
 
   test("strips trailing slash, maps RPCs, and turns LIVE_CLOSE on", () => {
@@ -102,4 +107,45 @@ describe("loadConfig", () => {
     assert.equal(cfg.liveClose, true);
     assert.equal(cfg.pollMs, 15_000);
   });
+
+  test("parses Telegram config when token and chat_id are present", () => {
+    const cfg = withEnv({
+      ...valid,
+      TELEGRAM_BOT_TOKEN: "123456:ABC-DEF",
+      TELEGRAM_CHAT_ID: "-1001234567890",
+      TELEGRAM_MESSAGE_THREAD_ID: "42",
+      TELEGRAM_ENABLED: "1",
+    }, () => loadConfig());
+    assert.deepEqual(cfg.telegram, {
+      token: "123456:ABC-DEF",
+      chatId: "-1001234567890",
+      threadId: 42,
+      enabled: true,
+    });
+  });
+
+  test("disables Telegram when TELEGRAM_ENABLED is 0 or false", () => {
+    const cfg = withEnv({
+      ...valid,
+      TELEGRAM_BOT_TOKEN: "123456:ABC-DEF",
+      TELEGRAM_CHAT_ID: "-1001234567890",
+      TELEGRAM_ENABLED: "0",
+    }, () => loadConfig());
+    assert.equal(cfg.telegram.enabled, false);
+  });
+
+  test("leaves telegram as null if token or chat_id is missing", () => {
+    const cfgOnlyToken = withEnv({
+      ...valid,
+      TELEGRAM_BOT_TOKEN: "123456:ABC-DEF",
+    }, () => loadConfig());
+    assert.equal(cfgOnlyToken.telegram, null);
+
+    const cfgOnlyChatId = withEnv({
+      ...valid,
+      TELEGRAM_CHAT_ID: "-1001234567890",
+    }, () => loadConfig());
+    assert.equal(cfgOnlyChatId.telegram, null);
+  });
 });
+

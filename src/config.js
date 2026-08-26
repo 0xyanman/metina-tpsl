@@ -21,6 +21,12 @@ function normalizePk(raw) {
   return hex.startsWith("0x") ? hex : `0x${hex}`;
 }
 
+function parseThreadId(raw) {
+  if (!raw) return null;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : raw;
+}
+
 export function loadConfig() {
   const metinaUrl = envStr("METINA_URL", "https://pro.metina.id").replace(/\/+$/, "");
   const email = envStr("METINA_EMAIL");
@@ -46,6 +52,20 @@ export function loadConfig() {
   if (!Object.keys(rpcs).length) {
     throw new Error("Set at least one of RPC_ROBINHOOD, RPC_BASE, RPC_BSC in .env (same URLs as Settings)");
   }
+  const tgToken = envStr("TELEGRAM_BOT_TOKEN");
+  const tgChatId = envStr("TELEGRAM_CHAT_ID");
+  const tgThreadId = parseThreadId(envStr("TELEGRAM_MESSAGE_THREAD_ID"));
+  const tgEnabled = envOn("TELEGRAM_ENABLED", true);
+
+  const telegram = tgToken && tgChatId
+    ? {
+      token: tgToken,
+      chatId: tgChatId,
+      threadId: tgThreadId,
+      enabled: tgEnabled,
+    }
+    : null;
+
   return {
     metinaUrl,
     email,
@@ -56,5 +76,7 @@ export function loadConfig() {
     pollMs: Math.max(15_000, envNum("POLL_MS", 45_000)),
     discoverEvery: Math.max(1, Math.round(envNum("DISCOVER_EVERY", 8))),
     liveClose: envOn("LIVE_CLOSE", false),
+    telegram,
   };
 }
+
