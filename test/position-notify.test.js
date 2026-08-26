@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   escapeHtml,
   createTelegramNotifier,
+  parseTelegramCommand,
 } from "../src/telegram.js";
 import {
   formatTimestampWIB,
@@ -16,10 +17,18 @@ import {
   formatAllPnlSummary,
   formatOpenSummary,
   formatCloseMessage,
+  formatHelpMessage,
   createPositionTracker,
 } from "../src/position-notify.js";
 
 describe("Telegram client", () => {
+  test("parseTelegramCommand parses commands and arguments", () => {
+    assert.deepEqual(parseTelegramCommand("/refresh"), { cmd: "/refresh", args: [], raw: "/refresh" });
+    assert.deepEqual(parseTelegramCommand("/refresh@MyBot"), { cmd: "/refresh", args: [], raw: "/refresh@MyBot" });
+    assert.deepEqual(parseTelegramCommand("/close 933596"), { cmd: "/close", args: ["933596"], raw: "/close 933596" });
+    assert.deepEqual(parseTelegramCommand("/close all"), { cmd: "/close", args: ["all"], raw: "/close all" });
+    assert.equal(parseTelegramCommand("not a command"), null);
+  });
   test("escapeHtml escapes special characters", () => {
     assert.equal(escapeHtml("A & B < C > D \"E\""), "A &amp; B &lt; C &gt; D &quot;E&quot;");
     assert.equal(escapeHtml(null), "");
@@ -216,6 +225,7 @@ describe("position-notify formatting", () => {
   test("formatOpenSummary produces structured HTML multi-position message", () => {
     const positions = [
       {
+        position: "933596",
         pair: "MARTIANS/USDG",
         chain: "robinhood",
         version: "v4",
@@ -230,6 +240,7 @@ describe("position-notify formatting", () => {
         },
       },
       {
+        position: "933597",
         pair: "HOOD10/USDG",
         chain: "robinhood",
         version: "v4",
@@ -247,9 +258,16 @@ describe("position-notify formatting", () => {
     const msg = formatOpenSummary(positions);
     assert.match(msg, /📂 <b>Open Positions · 2 active<\/b>/);
     assert.match(msg, /All PNL:/);
-    // Should sort alphabetically: HOOD10 comes before MARTIANS
-    assert.match(msg, /<b>① HOOD10\/USDG<\/b>[\s\S]*<b>② MARTIANS\/USDG<\/b>/);
+    // Should sort alphabetically: HOOD10 comes before MARTIANS, and include ID
+    assert.match(msg, /<b>① HOOD10\/USDG<\/b> · ID: <code>933597<\/code>[\s\S]*<b>② MARTIANS\/USDG<\/b> · ID: <code>933596<\/code>/);
     assert.match(msg, /────────/);
+  });
+
+  test("formatHelpMessage produces command instructions", () => {
+    const help = formatHelpMessage();
+    assert.match(help, /Metina TPSL Bot Commands/);
+    assert.match(help, /\/refresh/);
+    assert.match(help, /\/close/);
   });
 
 

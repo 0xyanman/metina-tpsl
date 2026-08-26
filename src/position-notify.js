@@ -230,23 +230,29 @@ export function formatAllPnlSummary(positions) {
   return `All PNL: ${parts.join(" · ")}`;
 }
 
-function formatPositionCard(p, index, totalCount) {
-  const pair = p.pair || p.position || p.tokenId || "Unknown";
-  const chain = p.chain ? p.chain.charAt(0).toUpperCase() + p.chain.slice(1) : "";
-
+function extractPositionTags(p) {
   const tags = [];
   if (p.version) tags.push(p.version.toUpperCase());
   if (p.poolType?.toLowerCase() === "dlmm") tags.push("DLMM");
   if (p.dex) tags.push(p.dex);
   if (p.source) tags.push(p.source);
-  // LPAgent check
   if (p.agent || p.lp_agent || p.is_lp_agent) tags.push("LPAgent");
+  return tags;
+}
+
+function formatPositionCard(p, index, totalCount) {
+  const pair = p.pair || p.position || p.tokenId || "Unknown";
+  const chain = p.chain ? p.chain.charAt(0).toUpperCase() + p.chain.slice(1) : "";
+  const tags = extractPositionTags(p);
 
   const numPrefix = totalCount > 1
     ? (CIRCLED_NUMBERS[index] || `(${index + 1}) `) + " "
     : "";
 
-  const titleLine = `<b>${numPrefix}${escapeHtml(pair)}</b>`;
+  const posId = p.position || p.tokenId || "";
+  const titleLine = posId
+    ? `<b>${numPrefix}${escapeHtml(pair)}</b> · ID: <code>${escapeHtml(posId)}</code>`
+    : `<b>${numPrefix}${escapeHtml(pair)}</b>`;
 
   const chainParts = [];
   if (chain) chainParts.push(`Chain: ${escapeHtml(chain)}`);
@@ -422,3 +428,16 @@ export function createPositionTracker() {
     },
   };
 }
+
+export function formatHelpMessage() {
+  return [
+    "🤖 <b>Metina TPSL Bot Commands</b>",
+    "",
+    "• <code>/refresh</code> - Update &amp; kirim ringkasan posisi open terkini",
+    "• <code>/close all</code> - Tutup semua posisi open",
+    "• <code>/close profit</code> - Tutup hanya posisi yang sedang profit",
+    "• <code>/close &lt;position_id&gt;</code> - Tutup posisi tertentu (contoh: <code>/close 933596</code> atau <code>/close 1</code>)",
+    "• <code>/help</code> - Tampilkan panduan ini",
+  ].join("\n");
+}
+
