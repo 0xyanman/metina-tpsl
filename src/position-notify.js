@@ -1,0 +1,368 @@
+import { positionKey, livePnlPct } from "./evaluate-exit.js";
+import { escapeHtml } from "./telegram.js";
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const CIRCLED_NUMBERS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⑪", "⑫", "⑬", "⑭", "⑮", "⑯", "⑰", "⑱", "⑲", "⑳"];
+
+export function formatTimestampWIB(date = new Date()) {
+  const d = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  const day = d.getUTCDate();
+  const month = MONTHS[d.getUTCMonth()];
+  const year = d.getUTCFullYear();
+  const hour = String(d.getUTCHours()).padStart(2, "0");
+  const min = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${day} ${month} ${year}, ${hour}:${min} WIB`;
+}
+
+function num(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function formatNumber(v, maxSig = 4) {
+  const n = num(v);
+  if (n == null) return "";
+  if (n === 0) return "0";
+  if (Math.abs(n) >= 10_000) return n.toFixed(2);
+  if (Math.abs(n) >= 1) return Number.parseFloat(n.toPrecision(maxSig + 1)).toString();
+  return Number.parseFloat(n.toPrecision(maxSig)).toString();
+}
+
+export function formatUsd(v, showSign = false) {
+  const n = num(v);
+  if (n == null) return "";
+  if (n === 0) return "$0.00";
+  if (n > 0) return showSign ? `+$${n.toFixed(2)}` : `$${n.toFixed(2)}`;
+  return `-$${Math.abs(n).toFixed(2)}`;
+}
+
+export function formatPct(v, showSign = true) {
+  const n = num(v);
+  if (n == null) return "";
+  if (n === 0) return "0.00%";
+  if (n > 0) return showSign ? `+${n.toFixed(2)}%` : `${n.toFixed(2)}%`;
+  return `${n.toFixed(2)}%`;
+}
+
+function buildPriceBar(now, min, max, barWidth = 24) {
+  if (min == null || max == null || max <= min) return "";
+  if (now == null) return "=".repeat(barWidth);
+  if (now < min) return "●" + "·".repeat(barWidth - 1);
+  if (now > max) return "·".repeat(barWidth - 1) + "●";
+
+  const ratio = (now - min) / (max - min);
+  const dotIdx = Math.min(barWidth - 1, Math.max(0, Math.round(ratio * (barWidth - 1))));
+  const chars = new Array(barWidth).fill("=");
+  chars[dotIdx] = "●";
+  return chars.join("");
+}
+
+export function formatPriceRange(position) {
+  if (!position || typeof position !== "object") return "";
+
+  const pnl = position.pnl && typeof position.pnl === "object" ? position.pnl : {};
+  const ticks = position.ticks && typeof position.ticks === "object" ? position.ticks : {};
+
+  const minRaw = position.price_min ?? position.min_price ?? position.range_min
+    ?? position.price_lower ?? position.tick_lower_price ?? ticks.lower_price;
+  const nowRaw = position.price_now ?? position.current_price ?? position.spot_price
+    ?? position.price ?? position.pool?.price ?? pnl.price_now;
+  const maxRaw = position.price_max ?? position.max_price ?? position.range_max
+    ?? position.price_upper ?? position.tick_upper_price ?? ticks.upper_price;
+
+  const min = num(minRaw);
+  const now = num(nowRaw);
+  const max = num(maxRaw);
+
+  const tickLower = position.tick_lower ?? ticks.lower ?? position.lower_tick;
+  const tickUpper = position.tick_upper ?? ticks.upper ?? position.upper_tick;
+
+  if (min == null && max == null && tickLower == null) return "";
+
+  const lines = [];
+
+  const parts = [];
+  if (min != null) parts.push(`MIN ${formatNumber(min)}`);
+  if (now != null) parts.push(`NOW ${formatNumber(now)}`);
+  if (max != null) parts.push(`MAX ${formatNumber(max)}`);
+  if (parts.length > 0) {
+    lines.push(`Range: ${parts.join(" · ")}`);
+  }
+
+  if (tickLower != null && tickUpper != null) {
+    lines.push(`       tick ${tickLower} → ${tickUpper}`);
+  }
+
+  const bar = buildPriceBar(now, min, max);
+  if (bar) {
+    lines.push(`       [${bar}]`);
+  }
+
+  return lines.join("\n");
+}
+
+export function formatPnlBlock(position, labelPrefix = "") {
+  if (!position || typeof position !== "object") return "";
+  const pnl = position.pnl && typeof position.pnl === "object" ? position.pnl : {};
+
+  const livePct = livePnlPct(position);
+  const liveUsd = num(pnl.pnl_usd ?? position.pnl_usd);
+  const onchainPct = num(pnl.onchain_pnl_pct ?? position.onchain_pnl_pct);
+  const valueUsd = num(pnl.current_value_usd ?? position.total_value_usd ?? position.current_value_usd);
+  const unclaimedUsd = num(pnl.unclaimed_fee_usd ?? position.unclaimed_fees_usd);
+  const claimedUsd = num(pnl.fees_claimed_usd ?? pnl.fees_claimed_usdg ?? position.fees_claimed_usd);
+
+  const lines = [];
+  const header = labelPrefix ? `PNL (${labelPrefix}):` : "PNL:";
+
+  if (livePct != null) {
+    const usdPart = liveUsd != null ? `  (${formatUsd(liveUsd, true)})` : "";
+    lines.push(`  Live:    ${formatPct(livePct, true)}${usdPart}`);
+  }
+  if (onchainPct != null) {
+    lines.push(`  On-chain: ${formatPct(onchainPct, true)}`);
+  }
+  if (valueUsd != null) {
+    lines.push(`  Value:   ${formatUsd(valueUsd)}`);
+  }
+  if (unclaimedUsd != null) {
+    lines.push(`  Unclaimed fees: ${formatUsd(unclaimedUsd)}`);
+  }
+  if (claimedUsd != null) {
+    lines.push(`  Collected fees: ${formatUsd(claimedUsd)}`);
+  }
+
+  if (lines.length === 0) return "";
+  return `${header}\n${lines.join("\n")}`;
+}
+
+export function formatAllPnlSummary(positions) {
+  if (!Array.isArray(positions) || positions.length === 0) return "";
+
+  let totalUsd = 0;
+  let hasUsd = false;
+  let livePctSum = 0;
+  let livePctCount = 0;
+
+  for (const p of positions) {
+    const pnl = p?.pnl && typeof p.pnl === "object" ? p.pnl : {};
+    const usd = num(pnl.pnl_usd ?? p?.pnl_usd);
+    if (usd != null) {
+      totalUsd += usd;
+      hasUsd = true;
+    }
+    const lp = livePnlPct(p);
+    if (lp != null) {
+      livePctSum += lp;
+      livePctCount += 1;
+    }
+  }
+
+  const parts = [];
+  if (hasUsd) {
+    parts.push(formatUsd(totalUsd, true));
+  }
+  if (livePctCount > 0) {
+    const avg = livePctSum / livePctCount;
+    if (positions.length === 1) {
+      parts.push(`Live ${formatPct(avg, true)}`);
+    } else {
+      parts.push(`Live avg ${formatPct(avg, true)}`);
+    }
+  }
+
+  if (parts.length === 0) return "";
+  return `All PNL: ${parts.join(" · ")}`;
+}
+
+function formatPositionCard(p, index, totalCount) {
+  const pair = p.pair || p.position || p.tokenId || "Unknown";
+  const chain = p.chain ? p.chain.charAt(0).toUpperCase() + p.chain.slice(1) : "";
+
+  const tags = [];
+  if (p.version) tags.push(p.version.toUpperCase());
+  if (p.poolType?.toLowerCase() === "dlmm") tags.push("DLMM");
+  if (p.dex) tags.push(p.dex);
+  if (p.source) tags.push(p.source);
+  // LPAgent check
+  if (p.agent || p.lp_agent || p.is_lp_agent) tags.push("LPAgent");
+
+  const numPrefix = totalCount > 1
+    ? (CIRCLED_NUMBERS[index] || `(${index + 1}) `) + " "
+    : "";
+
+  const titleLine = `<b>${numPrefix}${escapeHtml(pair)}</b>`;
+
+  const chainParts = [];
+  if (chain) chainParts.push(`Chain: ${escapeHtml(chain)}`);
+  if (tags.length > 0) chainParts.push(escapeHtml(tags.join(" · ")));
+  const chainLine = chainParts.join(" · ");
+
+  const sl = num(p.stop_loss_pct);
+  const tp = num(p.take_profit_pct);
+  const slStr = sl != null ? `${sl}%` : "—";
+  const tpStr = tp != null ? `${tp}%` : "—";
+  const slTpLine = `SL: ${slStr} · TP: ${tpStr}`;
+
+  const pnlBlock = formatPnlBlock(p);
+  const rangeBlock = formatPriceRange(p);
+
+  const cardLines = [titleLine];
+  if (chainLine) cardLines.push(chainLine);
+  cardLines.push(slTpLine);
+  if (pnlBlock) cardLines.push(pnlBlock);
+  if (rangeBlock) cardLines.push(`<code>${escapeHtml(rangeBlock)}</code>`);
+
+  return cardLines.join("\n");
+}
+
+export function formatOpenSummary(positions) {
+  const list = Array.isArray(positions) ? positions : [];
+  if (list.length === 0) return "";
+
+  const sorted = [...list].sort((a, b) => {
+    const pairA = String(a.pair || a.position || a.tokenId || "").toLowerCase();
+    const pairB = String(b.pair || b.position || b.tokenId || "").toLowerCase();
+    return pairA.localeCompare(pairB);
+  });
+
+  const count = sorted.length;
+  const timestamp = formatTimestampWIB();
+  const allPnl = formatAllPnlSummary(sorted);
+
+  const headerLines = [
+    `📂 <b>Open Positions · ${count} active</b>`,
+    `🕐 ${timestamp}`,
+  ];
+  if (allPnl) headerLines.push(allPnl);
+  const header = headerLines.join("\n");
+
+  const cardSeparator = "\n\n────────\n\n";
+  const cards = [];
+  let currentLen = header.length + 2;
+
+  for (let i = 0; i < count; i++) {
+    const card = formatPositionCard(sorted[i], i, count);
+    const additionLen = (cards.length > 0 ? cardSeparator.length : 2) + card.length;
+
+    if (currentLen + additionLen > 3500 && cards.length > 0) {
+      const remaining = count - cards.length;
+      cards.push(`… +${remaining} posisi lain (potong)`);
+      break;
+    }
+
+    cards.push(card);
+    currentLen += additionLen;
+  }
+
+  return `${header}\n\n${cards.join(cardSeparator)}`;
+}
+
+function getTriggerLabel(kind, reason) {
+  if (kind === "take_profit") return "Take Profit";
+  if (kind === "stop_loss") return "Stop Loss";
+  if (reason && reason !== "manual_or_external") return reason;
+  return "Manual / external";
+}
+
+export function formatCloseMessage({ position, reason, kind, tx, error, dry }) {
+  const p = position || {};
+  const pair = p.pair || p.position || p.tokenId || "Unknown";
+  const chain = p.chain ? p.chain.charAt(0).toUpperCase() + p.chain.slice(1) : "";
+  const timestamp = formatTimestampWIB();
+
+  const titleMeta = chain ? `${escapeHtml(pair)} · ${escapeHtml(chain)}` : escapeHtml(pair);
+  const triggerLabel = getTriggerLabel(kind, reason);
+
+  if (dry) {
+    const livePct = livePnlPct(p);
+    const liveStr = livePct != null ? formatPct(livePct, true) : "—";
+    const threshold = kind === "take_profit"
+      ? `TP ${p.take_profit_pct ?? "—"}%`
+      : `SL ${p.stop_loss_pct ?? "—"}%`;
+
+    return [
+      `🧪 <b>[DRY] Would Close</b>`,
+      `<b>${titleMeta}</b>`,
+      "",
+      `Trigger: ${escapeHtml(triggerLabel)}`,
+      `Live PNL: ${liveStr} (threshold ${threshold})`,
+      `🕐 ${timestamp}`,
+    ].join("\n");
+  }
+
+  if (error) {
+    return [
+      `⚠️ <b>Close Failed</b>`,
+      `<b>${titleMeta}</b>`,
+      "",
+      `Trigger: ${escapeHtml(triggerLabel)}`,
+      `Reason: ${escapeHtml(error)}`,
+      `🕐 ${timestamp}`,
+    ].join("\n");
+  }
+
+  const pnlPrefix = reason === "manual_or_external" ? "last seen" : "";
+  const pnlBlock = formatPnlBlock(p, pnlPrefix);
+  const rangeBlock = formatPriceRange(p);
+
+  const lines = [
+    `🔴 <b>Position Closed</b>`,
+    `<b>${titleMeta}</b>`,
+    "",
+    `Trigger: ${escapeHtml(triggerLabel)}`,
+  ];
+
+  if (pnlBlock) lines.push(pnlBlock);
+  if (rangeBlock) lines.push(`<code>${escapeHtml(rangeBlock)}</code>`);
+  if (tx) lines.push(`Tx: <code>${escapeHtml(tx)}</code>`);
+  lines.push(`🕐 ${timestamp}`);
+
+  return lines.join("\n");
+}
+
+export function createPositionTracker() {
+  const previousOpenMap = new Map();
+  const justClosedKeys = new Set();
+
+  return {
+    getPreviousMap: () => previousOpenMap,
+    markWorkerClosed: (key) => {
+      justClosedKeys.add(key);
+    },
+    async notifyCycle({ open, discover, notifier }) {
+      if (!notifier?.isEnabled()) return;
+
+      const currentOpen = Array.isArray(open) ? open : [];
+      const currentKeys = new Set(currentOpen.map((p) => positionKey(p)));
+
+      // 1. If discover tick and open positions exist -> send summary
+      if (discover && currentOpen.length > 0) {
+        const summary = formatOpenSummary(currentOpen);
+        if (summary) await notifier.send(summary);
+      }
+
+      // 2. Diff keys vs previous -> check if any closed externally
+      if (previousOpenMap.size > 0) {
+        for (const [key, oldPos] of previousOpenMap.entries()) {
+          if (!currentKeys.has(key) && !justClosedKeys.has(key)) {
+            const msg = formatCloseMessage({
+              position: oldPos,
+              reason: "manual_or_external",
+              kind: "manual",
+            });
+            await notifier.send(msg);
+          }
+        }
+      }
+
+      // 3. Update previousOpenMap and clear justClosedKeys
+      previousOpenMap.clear();
+      for (const p of currentOpen) {
+        previousOpenMap.set(positionKey(p), p);
+      }
+      justClosedKeys.clear();
+    },
+  };
+}
