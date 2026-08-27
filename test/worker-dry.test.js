@@ -1,6 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { runCycle } from "../src/worker.js";
+import { createPositionTracker } from "../src/position-notify.js";
 
 describe("worker cycle", () => {
   test("does not call close when LIVE_CLOSE is off", async () => {
@@ -112,5 +113,41 @@ describe("worker cycle", () => {
     await runCycle(client, { liveClose: true, discover: false }, inflight);
     assert.equal(closed, 1);
     assert.equal(inflight.has("uniswap-bsc-3"), false);
+  });
+
+  test("DRY telegram notify is sent once per position while SL/TP still hits", async () => {
+    const sent = [];
+    const client = {
+      async positions() {
+        return {
+          positions: [{
+            poolType: "uniswap",
+            chain: "bsc",
+            position: "1",
+            pair: "TEST-USDT",
+            pnl_reliable: true,
+            pnl: { onchain_pnl_pct: -80, pnl_reliable: true },
+            stop_loss_pct: -50,
+            take_profit_pct: 10,
+          }],
+        };
+      },
+      async close() {
+        throw new Error("should not close in DRY");
+      },
+    };
+    const tracker = createPositionTracker();
+    const notifier = {
+      isEnabled: () => true,
+      send: async (msg) => {
+        sent.push(msg);
+        return { ok: true };
+      },
+    };
+    const opts = { notifier, tracker };
+    await runCycle(client, { liveClose: false, discover: false }, new Set(), opts);
+    await runCycle(client, { liveClose: false, discover: false }, new Set(), opts);
+    const dryMsgs = sent.filter((m) => m.includes("[DRY]"));
+    assert.equal(dryMsgs.length, 1);
   });
 });
