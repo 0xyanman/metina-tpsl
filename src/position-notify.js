@@ -177,10 +177,10 @@ export function formatAssetsBlock(position) {
 
   const ethAmt = num(pnl.amount_eth ?? position.amount_eth);
   const ethUsd = num(pnl.amount_eth_usd ?? position.amount_eth_usd);
-  const ethSym = pnl.quote_symbol || position.quote_symbol || (position.pair ? position.pair.split("/")[1] : "");
+  const ethSym = pnl.quote_symbol || position.quote_symbol || (position.pair ? position.pair.split("/")[1] : "") || "";
 
   const memeLine = formatTokenLine(memeAmt, memeUsd, memeSym);
-  const isStableQuote = ["USDG", "USDT", "USDC", "USD", "DAI"].includes(ethSym.toUpperCase());
+  const isStableQuote = ["USDG", "USDT", "USDC", "USD", "DAI"].includes(String(ethSym).toUpperCase());
   const ethLine = formatTokenLine(ethAmt, ethUsd, ethSym, isStableQuote);
 
   const lines = [];
@@ -279,15 +279,19 @@ function formatPositionCard(p, index, totalCount) {
   return cardLines.join("\n");
 }
 
-export function formatOpenSummary(positions) {
-  const list = Array.isArray(positions) ? positions : [];
-  if (list.length === 0) return "";
-
-  const sorted = [...list].sort((a, b) => {
+export function sortOpenPositions(positions) {
+  return [...positions].sort((a, b) => {
     const pairA = String(a.pair || a.position || a.tokenId || "").toLowerCase();
     const pairB = String(b.pair || b.position || b.tokenId || "").toLowerCase();
     return pairA.localeCompare(pairB);
   });
+}
+
+export function formatOpenSummary(positions) {
+  const list = Array.isArray(positions) ? positions : [];
+  if (list.length === 0) return "";
+
+  const sorted = sortOpenPositions(list);
 
   const count = sorted.length;
   const timestamp = formatTimestampWIB();
@@ -387,11 +391,23 @@ export function formatCloseMessage({ position, reason, kind, tx, error, dry }) {
 export function createPositionTracker() {
   const previousOpenMap = new Map();
   const justClosedKeys = new Set();
+  const dryNotifiedKeys = new Set();
 
   return {
     getPreviousMap: () => previousOpenMap,
     markWorkerClosed: (key) => {
       justClosedKeys.add(key);
+    },
+    /** Returns true the first time this key is marked in a DRY streak. */
+    markDryNotified: (key) => {
+      if (dryNotifiedKeys.has(key)) return false;
+      dryNotifiedKeys.add(key);
+      return true;
+    },
+    pruneDryNotified: (activeKeys) => {
+      for (const key of dryNotifiedKeys) {
+        if (!activeKeys.has(key)) dryNotifiedKeys.delete(key);
+      }
     },
     async notifyCycle({ open, discover, notifier }) {
       if (!notifier?.isEnabled()) return;
@@ -434,9 +450,9 @@ export function formatHelpMessage() {
     "🤖 <b>Metina TPSL Bot Commands</b>",
     "",
     "• <code>/refresh</code> - Update &amp; kirim ringkasan posisi open terkini",
-    "• <code>/close all</code> - Tutup semua posisi open",
-    "• <code>/close profit</code> - Tutup hanya posisi yang sedang profit",
-    "• <code>/close &lt;position_id&gt;</code> - Tutup posisi tertentu (contoh: <code>/close 933596</code> atau <code>/close 1</code>)",
+    "• <code>/close all</code> - Tutup semua posisi open (butuh LIVE_CLOSE=1)",
+    "• <code>/close profit</code> - Tutup hanya posisi yang sedang profit (butuh LIVE_CLOSE=1)",
+    "• <code>/close &lt;id atau nomor&gt;</code> - Tutup posisi tertentu (contoh: <code>/close 933596</code> atau <code>/close 1</code> sesuai nomor di ringkasan)",
     "• <code>/help</code> - Tampilkan panduan ini",
   ].join("\n");
 }

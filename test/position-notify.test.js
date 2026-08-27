@@ -207,6 +207,8 @@ describe("position-notify formatting", () => {
     assert.match(block, /Assets:/);
     assert.match(block, /1\.87k PONSBOT \(\$1\.58\)/);
     assert.match(block, /\$28\.37/);
+
+    assert.doesNotThrow(() => formatAssetsBlock({ pair: "SOLOTOKEN", pnl: { amount_meme: 1 } }));
   });
 
   test("formatAllPnlSummary aggregates total USD and average Live %", () => {
@@ -433,5 +435,13 @@ describe("PositionTracker cycle integration", () => {
     // Cycle 2: pos1 is now gone from open
     await tracker.notifyCycle({ open: [], discover: false, notifier });
     assert.equal(sentMessages.length, 0);
+  });
+
+  test("markDryNotified only returns true once until pruned", () => {
+    const tracker = createPositionTracker();
+    assert.equal(tracker.markDryNotified("uniswap-bsc-1"), true);
+    assert.equal(tracker.markDryNotified("uniswap-bsc-1"), false);
+    tracker.pruneDryNotified(new Set());
+    assert.equal(tracker.markDryNotified("uniswap-bsc-1"), true);
   });
 });

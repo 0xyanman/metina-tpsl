@@ -1,5 +1,11 @@
 import { closePayload, evaluateExit, livePnlPct, positionKey, watchLine } from "./evaluate-exit.js";
-import { createPositionTracker, formatCloseMessage, formatOpenSummary, formatHelpMessage } from "./position-notify.js";
+import {
+  createPositionTracker,
+  formatCloseMessage,
+  formatOpenSummary,
+  formatHelpMessage,
+  sortOpenPositions,
+} from "./position-notify.js";
 import { escapeHtml } from "./telegram.js";
 
 function now() {
@@ -55,7 +61,7 @@ async function closePosition(client, notifier, tracker, inflight, pos, { reason,
       })
     );
     const ok = result?.success || result?.ok;
-    if (tracker) tracker.markWorkerClosed(key);
+    if (ok && tracker) tracker.markWorkerClosed(key);
     await notifier?.send(
       formatCloseMessage({
         position: pos,
@@ -66,7 +72,9 @@ async function closePosition(client, notifier, tracker, inflight, pos, { reason,
         dry: false,
       })
     );
+    if (!ok) inflight.delete(key);
   } catch (err) {
+    inflight.delete(key);
     await notifier?.send(
       formatCloseMessage({
         position: pos,
@@ -76,8 +84,6 @@ async function closePosition(client, notifier, tracker, inflight, pos, { reason,
         dry: false,
       })
     );
-  } finally {
-    inflight.delete(key);
   }
 }
 
@@ -101,8 +107,9 @@ async function handleCloseProfit(client, notifier, tracker, inflight) {
 
   const profitPositions = open.filter((p) => {
     const pct = livePnlPct(p);
-    const usd = p?.pnl?.pnl_usd ?? p?.pnl_usd;
-    return (pct != null && pct > 0) || (usd != null && Number(usd) > 0);
+    if (pct != null) return pct > 0;
+    const usd = Number(p?.pnl?.pnl_usd ?? p?.pnl_usd);
+    return Number.isFinite(usd) && usd > 0;
   });
 
   if (profitPositions.length === 0) {
@@ -121,7 +128,8 @@ async function handleCloseProfit(client, notifier, tracker, inflight) {
 }
 
 async function handleCloseSpecific(client, notifier, tracker, inflight, open, target) {
-  const pos = open.find((p, idx) => {
+  const sorted = sortOpenPositions(open);
+  const pos = sorted.find((p, idx) => {
     const pId = String(p.position || p.tokenId || "").toLowerCase();
     return pId === target || String(idx + 1) === target;
   });
@@ -138,15 +146,30 @@ async function handleCloseSpecific(client, notifier, tracker, inflight, open, ta
   });
 }
 
-async function handleCloseCommand(parsed, { client, notifier, tracker, inflight }) {
-  const target = (parsed.args[0] || "all").trim().toLowerCase();
+async function handleCloseCommand(parsed, { client, notifier, tracker, inflight, liveClose }) {
+  const rawTarget = parsed.args[0];
+  if (!rawTarget) {
+    await notifier?.send(
+      "⚠️ /close butuh target. Pakai <code>/close all</code>, <code>/close profit</code>, atau <code>/close &lt;id atau nomor&gt;</code>."
+    );
+    return;
+  }
+
+  if (!liveClose) {
+    await notifier?.send(
+      "⚠️ LIVE_CLOSE=0 — command /close diabaikan. Set LIVE_CLOSE=1 di .env untuk menutup posisi dari Telegram."
+    );
+    return;
+  }
+
+  const target = String(rawTarget).trim().toLowerCase();
 
   if (target === "profit" || target === "untung" || target === "tp") {
     await handleCloseProfit(client, notifier, tracker, inflight);
     return;
   }
 
-  const open = await getOpenPositions(client, false);
+  const open = await getOpenPositions(client, true);
 
   if (open.length === 0) {
     await notifier?.send("⚠️ Tidak ada posisi open yang bisa ditutup.");
@@ -182,6 +205,7 @@ export async function runCycle(client, { liveClose, discover }, inflight, option
   const { notifier, tracker } = options;
   const open = await getOpenPositions(client, discover);
   let hits = 0;
+  const dryHits = new Set();
 
   for (const p of open) {
     log(watchLine(p));
@@ -196,8 +220,9 @@ export async function runCycle(client, { liveClose, discover }, inflight, option
     }
     if (!liveClose) {
       log(`DRY ${label}`);
-      if (tracker) tracker.markWorkerClosed(key);
-      if (notifier?.isEnabled()) {
+      dryHits.add(key);
+      const firstDry = !tracker || tracker.markDryNotified(key);
+      if (firstDry && notifier?.isEnabled()) {
         const msg = formatCloseMessage({
           position: p,
           kind: decision.kind,
@@ -249,6 +274,10 @@ export async function runCycle(client, { liveClose, discover }, inflight, option
         await notifier.send(msg);
       }
     }
+  }
+
+  if (tracker?.pruneDryNotified) {
+    tracker.pruneDryNotified(dryHits);
   }
 
   if (tracker) {

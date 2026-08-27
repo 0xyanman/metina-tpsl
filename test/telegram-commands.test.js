@@ -87,11 +87,11 @@ describe("handleTelegramCommand", () => {
     const inflight = new Set();
     await handleTelegramCommand(
       { cmd: "/close", args: ["933596"], raw: "/close 933596" },
-      { client, notifier, tracker: null, inflight }
+      { client, notifier, tracker: null, inflight, liveClose: true }
     );
 
     assert.equal(closedBody.position, "933596");
-    assert.equal(inflight.size, 0); // cleaned up after close
+    assert.equal(inflight.size, 1); // stays in-flight after successful close
     assert.equal(sent.length, 2);
     assert.match(sent[0], /Memproses penutupan posisi/);
     assert.match(sent[1], /Position Closed/);
@@ -116,7 +116,7 @@ describe("handleTelegramCommand", () => {
 
     await handleTelegramCommand(
       { cmd: "/close", args: ["999999"], raw: "/close 999999" },
-      { client, notifier, tracker: null, inflight: new Set() }
+      { client, notifier, tracker: null, inflight: new Set(), liveClose: true }
     );
 
     assert.equal(sent.length, 1);
@@ -133,13 +133,17 @@ describe("handleTelegramCommand", () => {
     };
 
     const closedBodies = [];
+    let capturedDiscover = false;
     const client = {
-      positions: async () => ({
-        positions: [
-          { position: "101", pair: "AAA/USD" },
-          { position: "102", pair: "BBB/USD" },
-        ],
-      }),
+      positions: async ({ discover }) => {
+        capturedDiscover = discover;
+        return {
+          positions: [
+            { position: "101", pair: "AAA/USD" },
+            { position: "102", pair: "BBB/USD" },
+          ],
+        };
+      },
       close: async (body) => {
         closedBodies.push(body);
         return { ok: true, tx: "0x123" };
@@ -149,11 +153,12 @@ describe("handleTelegramCommand", () => {
     const inflight = new Set();
     await handleTelegramCommand(
       { cmd: "/close", args: ["all"], raw: "/close all" },
-      { client, notifier, tracker: null, inflight }
+      { client, notifier, tracker: null, inflight, liveClose: true }
     );
 
+    assert.equal(capturedDiscover, true);
     assert.equal(closedBodies.length, 2);
-    assert.equal(inflight.size, 0);
+    assert.equal(inflight.size, 2);
     assert.equal(sent.length, 3); // 1 summary start message + 2 position close messages
     assert.match(sent[0], /Memproses penutupan <b>2 posisi open<\/b>/);
   });
@@ -188,7 +193,7 @@ describe("handleTelegramCommand", () => {
     const inflight = new Set();
     await handleTelegramCommand(
       { cmd: "/close", args: ["profit"], raw: "/close profit" },
-      { client, notifier, tracker: null, inflight }
+      { client, notifier, tracker: null, inflight, liveClose: true }
     );
 
     assert.equal(capturedDiscover, true); // Verified that discover: true was used!
@@ -219,10 +224,95 @@ describe("handleTelegramCommand", () => {
 
     await handleTelegramCommand(
       { cmd: "/close", args: ["profit"], raw: "/close profit" },
-      { client, notifier, tracker: null, inflight: new Set() }
+      { client, notifier, tracker: null, inflight: new Set(), liveClose: true }
     );
 
     assert.equal(sent.length, 1);
     assert.match(sent[0], /Tidak ada posisi open yang sedang profit/);
+  });
+
+  test("/close without a target does not close anything", async () => {
+    const sent = [];
+    let closed = 0;
+    const notifier = {
+      send: async (msg) => {
+        sent.push(msg);
+        return { ok: true };
+      },
+    };
+    const client = {
+      positions: async () => ({ positions: [{ position: "101", pair: "AAA/USD" }] }),
+      close: async () => {
+        closed += 1;
+        return { ok: true };
+      },
+    };
+
+    await handleTelegramCommand(
+      { cmd: "/close", args: [], raw: "/close" },
+      { client, notifier, tracker: null, inflight: new Set(), liveClose: true }
+    );
+
+    assert.equal(closed, 0);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0], /butuh target/);
+  });
+
+  test("/close is ignored when LIVE_CLOSE is off", async () => {
+    const sent = [];
+    let closed = 0;
+    const notifier = {
+      send: async (msg) => {
+        sent.push(msg);
+        return { ok: true };
+      },
+    };
+    const client = {
+      positions: async () => ({ positions: [{ position: "101", pair: "AAA/USD" }] }),
+      close: async () => {
+        closed += 1;
+        return { ok: true };
+      },
+    };
+
+    await handleTelegramCommand(
+      { cmd: "/close", args: ["all"], raw: "/close all" },
+      { client, notifier, tracker: null, inflight: new Set(), liveClose: false }
+    );
+
+    assert.equal(closed, 0);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0], /LIVE_CLOSE=0/);
+  });
+
+  test("/close 1 matches the numbered card from the sorted summary", async () => {
+    const sent = [];
+    let closedId = null;
+    const notifier = {
+      send: async (msg) => {
+        sent.push(msg);
+        return { ok: true };
+      },
+    };
+    const client = {
+      positions: async () => ({
+        positions: [
+          { position: "933596", pair: "MARTIANS/USDG", chain: "robinhood" },
+          { position: "933597", pair: "HOOD10/USDG", chain: "robinhood" },
+        ],
+      }),
+      close: async (body) => {
+        closedId = body.position;
+        return { ok: true, tx: "0x1" };
+      },
+    };
+
+    await handleTelegramCommand(
+      { cmd: "/close", args: ["1"], raw: "/close 1" },
+      { client, notifier, tracker: null, inflight: new Set(), liveClose: true }
+    );
+
+    // Summary sorts HOOD10 before MARTIANS, so /close 1 must close HOOD10
+    assert.equal(closedId, "933597");
   });
 });
