@@ -20,7 +20,7 @@ Set SL/TP on the Metina Pro Open positions card. The worker only checks and clos
 4. Node 18+ if you run it on your laptop. Or a Railway / VPS account if you want 24h without leaving a laptop on.
 5. On the Pro desk: open **Open positions**, fill **SL** and **TP** on each card you want protected. Empty SL/TP = the worker will not close that position.
 
-`LIVE_CLOSE=0` means **watch only**. The worker logs `DRY stop loss …` and does not send a close. `LIVE_CLOSE=1` actually closes + swaps, same as the Close button.
+`LIVE_CLOSE=0` means **watch only**. The worker logs `DRY stop loss …` and does not send a close. Telegram `/close` is also ignored. `LIVE_CLOSE=1` actually closes + swaps, same as the Close button.
 
 **Do not use Vercel.** `npm start` is a long-running loop; Vercel kills it. Hobby cron is once a day.
 
@@ -109,6 +109,31 @@ pm2 status          # should stay "online"
 pm2 logs metina-tpsl --lines 50
 ```
 
+### Telegram (optional)
+
+Leave `TELEGRAM_*` empty to keep notifications off.
+
+To enable: create a bot with [@BotFather](https://t.me/BotFather), add it to your chat / group / forum topic, then set in `.env` or Railway Variables:
+
+```
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...                 # chat / group / channel ID
+TELEGRAM_MESSAGE_THREAD_ID=          # optional: forum topic
+TELEGRAM_ENABLED=1
+```
+
+On start you should see `Telegram notifications enabled` and `Telegram command listener started`.
+
+Commands (from that chat only):
+
+- `/refresh` — send the latest open-positions summary
+- `/help` — command list
+- `/close all` — close every open position
+- `/close profit` — close only positions currently in profit
+- `/close <id>` — close one position (`/close 933596`, or `/close 1` using the number on the last summary card)
+
+`/close` is ignored while `LIVE_CLOSE=0`. `/close` with no target does nothing. Anyone in that chat can send commands.
+
 ### Notes
 
 - Stop the worker = TP/SL is off (same as closing the desk tab).
@@ -136,7 +161,7 @@ SL/TP tetap diisi di kartu posisi Metina Pro (Open positions). Worker hanya ngec
 4. Node 18+ kalau dijalankan di laptop. Atau akun Railway / VPS kalau mau 24 jam tanpa laptop nyala.
 5. Di desk Pro: buka **Open positions**, isi **SL** dan **TP** di kartu yang mau dilindungi. SL/TP kosong = worker tidak close posisi itu.
 
-`LIVE_CLOSE=0` artinya **mode lihat dulu**. Worker nulis `DRY stop loss …` dan **tidak** mengirim close. `LIVE_CLOSE=1` baru benar-benar close + swap, sama seperti tombol Close.
+`LIVE_CLOSE=0` artinya **mode lihat dulu**. Worker nulis `DRY stop loss …` dan **tidak** mengirim close. Command Telegram `/close` juga diabaikan. `LIVE_CLOSE=1` baru benar-benar close + swap, sama seperti tombol Close.
 
 **Jangan pakai Vercel.** `npm start` harus hidup terus; Vercel mematikannya. Cron Hobby cuma 1x sehari.
 
@@ -224,6 +249,31 @@ pm2 restart metina-tpsl
 pm2 status          # harus "online"
 pm2 logs metina-tpsl --lines 50
 ```
+
+### Telegram (opsional)
+
+Kosongkan `TELEGRAM_*` kalau tidak mau notifikasi.
+
+Untuk nyalain: buat bot lewat [@BotFather](https://t.me/BotFather), masukkan ke chat / grup / topik forum, lalu isi di `.env` atau Railway Variables:
+
+```
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...                 # ID chat / grup / channel
+TELEGRAM_MESSAGE_THREAD_ID=          # opsional: topik forum
+TELEGRAM_ENABLED=1
+```
+
+Saat start harus muncul `Telegram notifications enabled` dan `Telegram command listener started`.
+
+Perintah (hanya dari chat itu):
+
+- `/refresh` — kirim ringkasan posisi open terkini
+- `/help` — daftar perintah
+- `/close all` — tutup semua posisi open
+- `/close profit` — tutup hanya posisi yang sedang profit
+- `/close <id>` — tutup satu posisi (`/close 933596`, atau `/close 1` sesuai nomor di kartu ringkasan terakhir)
+
+`/close` diabaikan selama `LIVE_CLOSE=0`. `/close` tanpa target tidak menutup apa pun. Siapa pun di chat itu bisa kirim perintah.
 
 ### Yang perlu diingat
 
