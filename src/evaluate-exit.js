@@ -31,13 +31,19 @@ export function livePnlPct(position) {
     liveUsd = (liveUsd || 0) + unclaimed + claimed;
   }
 
-  if (display != null && Math.abs(display) >= 0.005) return display;
+  const mixed = (pct) => {
+    if (pct == null || !Number.isFinite(pct) || Math.abs(pct) <= 500) return false;
+    return liveUsd == null || Math.abs(liveUsd) < 0.01;
+  };
+
+  if (display != null && Math.abs(display) >= 0.005 && !mixed(display)) return display;
   if (liveUsd != null && Math.abs(liveUsd) >= 0.01 && current != null) {
     const cost = current - liveUsd;
     if (cost > 0) return (liveUsd / cost) * 100;
   }
-  if (display != null) return display;
-  return onchain;
+  if (display != null && !mixed(display)) return display;
+  if (onchain != null && !mixed(onchain)) return onchain;
+  return null;
 }
 
 export function evaluateExit(position) {

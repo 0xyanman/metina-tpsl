@@ -75,6 +75,24 @@ describe("TP/SL rules (same as Metina Pro desk)", () => {
     assert.equal(empty.action, null);
   });
 
+  test("native-quote unit-mix % does not trip TP", () => {
+    const hit = evaluateExit({
+      poolType: "uniswap",
+      pair: "PIPEDOG/WETH",
+      quote_symbol: "WETH",
+      take_profit_pct: 3,
+      stop_loss_pct: -15,
+      pnl: {
+        quote_symbol: "WETH",
+        pnl_pct: 245388,
+        onchain_pnl_pct: 245388,
+        pnl_usd: -0.004,
+        current_value_usd: 2454.88,
+      },
+    });
+    assert.equal(hit.action, null);
+  });
+
   test("principal-seeded entry does not trip TP", () => {
     const seeded = evaluateExit({
       poolType: "uniswap",
